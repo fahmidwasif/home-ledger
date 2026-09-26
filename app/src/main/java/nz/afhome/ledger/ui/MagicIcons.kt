@@ -101,6 +101,15 @@ object Magic {
         circle(10f, 4.8f, 1.1f), circle(13.4f, 3.2f, 0.8f), circle(15f, 5.4f, 0.6f),
     )
 
+    /** Subscriptions: a Time-Turner, for payments that keep coming round. */
+    val TimeTurner = icon(
+        "TimeTurner",
+        circle(12f, 13.2f, 9.3f) + circle(12f, 13.2f, 8f),
+        circle(12f, 2.4f, 1.4f) + circle(12f, 2.4f, 0.6f),
+        "M8.6,7.2h6.8v1.1c0,1.7 -1.2,3.2 -2.5,4.9c1.3,1.7 2.5,3.2 2.5,4.9v1.1H8.6v-1.1c0,-1.7 1.2,-3.2 2.5,-4.9c-1.3,-1.7 -2.5,-3.2 -2.5,-4.9Z" +
+            "M9.9,8.4h4.2c-0.2,1.1 -1,2.2 -2.1,3.5c-1.1,-1.3 -1.9,-2.4 -2.1,-3.5Z",
+    )
+
     // ---- The five Horcrux objects, each used once as a section mark ----
 
     /** Receipts: the diary. */

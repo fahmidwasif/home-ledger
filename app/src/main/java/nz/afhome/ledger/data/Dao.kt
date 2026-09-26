@@ -92,6 +92,12 @@ interface LedgerDao {
     @Query("SELECT * FROM budgets") fun budgetsFlow(): Flow<List<Budget>>
     @Query("SELECT * FROM budgets") suspend fun budgets(): List<Budget>
 
+    // ---- subscriptions ----
+    @Query("SELECT * FROM subscriptions ORDER BY active DESC, nextDue") fun subscriptionsFlow(): Flow<List<Subscription>>
+    @Query("SELECT * FROM subscriptions") suspend fun subscriptions(): List<Subscription>
+    @Upsert suspend fun upsertSubscription(s: Subscription): Long
+    @Delete suspend fun deleteSubscription(s: Subscription)
+
     // ---- restore ----
     @Query("DELETE FROM line_items") suspend fun wipeItems()
     @Query("DELETE FROM receipts") suspend fun wipeReceipts()
@@ -103,6 +109,7 @@ interface LedgerDao {
     @Query("DELETE FROM vehicles") suspend fun wipeVehicles()
     @Query("DELETE FROM category_rules") suspend fun wipeRules()
     @Query("DELETE FROM budgets") suspend fun wipeBudgets()
+    @Query("DELETE FROM subscriptions") suspend fun wipeSubscriptions()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putReceipts(x: List<Receipt>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putItems(x: List<LineItem>)
@@ -114,13 +121,14 @@ interface LedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFuel(x: List<FuelLog>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putRules(x: List<CategoryRule>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putBudgets(x: List<Budget>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSubscriptions(x: List<Subscription>)
 
     @Transaction
     suspend fun replaceAll(s: Snapshot) {
         wipeItems(); wipeReceipts(); wipeInventory(); wipeUsage(); wipeShopping()
-        wipeLunch(); wipeFuel(); wipeVehicles(); wipeRules(); wipeBudgets()
+        wipeLunch(); wipeFuel(); wipeVehicles(); wipeRules(); wipeBudgets(); wipeSubscriptions()
         putReceipts(s.receipts); putItems(s.lineItems); putInventory(s.inventory); putUsage(s.usage)
         putShopping(s.shopping); putLunches(s.lunches); putVehicles(s.vehicles); putFuel(s.fuel)
-        putRules(s.rules); putBudgets(s.budgets)
+        putRules(s.rules); putBudgets(s.budgets); putSubscriptions(s.subscriptions)
     }
 }

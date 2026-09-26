@@ -39,6 +39,14 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val app = applicationContext.ledger
         val lines = mutableListOf<String>()
+        val logged = app.repo.processSubscriptions()
+        if (logged > 0) lines += "Logged $logged recurring payment${if (logged > 1) "s" else ""} that came out today"
+        app.repo.dao.subscriptions().filter { it.active && it.remindDays > 0 }.forEach { s ->
+            val left = Insights.daysUntil(s.nextDue)
+            if (left == s.remindDays.toLong() || (left == 1L && s.remindDays > 1)) {
+                lines += "${s.name} renews ${s.nextDue.fmtDate()}: ${nz.afhome.ledger.data.money(s.amount)}. Cancel before then if you don't need it"
+            }
+        }
         for (v in app.repo.dao.vehicles()) {
             fun check(label: String, day: Long?) {
                 val d = day ?: return

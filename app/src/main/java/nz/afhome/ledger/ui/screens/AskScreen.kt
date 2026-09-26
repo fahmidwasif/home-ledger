@@ -78,7 +78,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                         val idx = lines.size
                         lines += ChatLine(false, "…")
                         val sb = StringBuilder()
-                        ledger.llm.stream(ledger.assistant.context(), question).collect { piece ->
+                        ledger.llm.stream(ledger.assistant.context(question), question).collect { piece ->
                             sb.append(piece)
                             lines[idx] = ChatLine(false, sb.toString())
                         }

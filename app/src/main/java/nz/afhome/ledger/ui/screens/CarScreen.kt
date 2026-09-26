@@ -1,6 +1,9 @@
 package nz.afhome.ledger.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,15 +65,35 @@ fun CarScreen() {
         if (vehicles.isEmpty()) item {
             SectionCard("Add your car") {
                 Text("Add the car to get WoF, rego and insurance reminders and a yearly running-cost estimate.")
-                Button(onClick = { editing = Vehicle(name = "Our car") }, modifier = Modifier.padding(top = 8.dp)) { Text("Add car") }
+                Button(onClick = { editing = Vehicle(name = "Honda Civic 2008 1.8L", fuelType = "Petrol 91") }, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("Add our Honda Civic")
+                }
             }
         }
         items(vehicles, key = { it.id }) { v ->
             SectionCard(v.name + (v.plate?.let { " · $it" } ?: ""), icon = nz.afhome.ledger.ui.Magic.FlyingCar, action = { TextButton(onClick = { editing = v }) { Text("Edit") } }) {
-                DueRow("WoF", v.wofExpiry)
+                DueRow("WoF (yearly for cars registered after 2000)", v.wofExpiry)
                 DueRow("Registration (rego)", v.regoExpiry)
                 DueRow("Insurance renewal", v.insuranceRenewal)
                 v.odometer?.let { Text("Odometer: $it km" + (v.nextServiceKm?.let { s -> " · next service at $s km" } ?: "")) }
+                val lp100 = nz.afhome.ledger.analysis.FuelGauge.measuredLp100(v, fuel)
+                if (lp100 != null) {
+                    val civic = v.name.contains("civic", true)
+                    Text(
+                        String.format(java.util.Locale.US, "Your fuel use: %.1f L/100 km", lp100) +
+                            if (civic) when {
+                                lp100 > 9.0 -> ". High for a 1.8L Civic (usually ~7.6): check tyre pressure, air filter and spark plugs."
+                                lp100 > 8.0 -> ". Typical for Auckland city driving in a 1.8L Civic."
+                                else -> ". Good for a 1.8L Civic."
+                            } else "",
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, modifier = Modifier.padding(top = 4.dp),
+                    )
+                } else if (v.name.contains("civic", true)) Text(
+                    "2008 Civic 1.8L: Honda rated 6.9 L/100 km; owners typically get ~7.6 (8.4 in city driving). " +
+                        "Enter the odometer at each fill-up to see yours.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp),
+                )
+                FuelGaugeCard(v, fuel) { bars -> scope.launch { app.repo.saveVehicle(v.copy(fuelBars = bars, fuelBarsDay = nz.afhome.ledger.data.today())) } }
                 Text(
                     "Auckland guide: petrol car rego ${money(Auckland.REGO_PETROL_YEAR)}/yr (from 1 July 2026). WoF ≈ \$76–91 at AA/VTNZ. " +
                         if (v.fuelType.contains("Diesel", true) || v.fuelType.contains("EV", true)) "Diesel/EV also pay RUC: \$76 per 1,000 km." else "",
@@ -102,6 +125,55 @@ fun CarScreen() {
         VehicleDialog(v, onDismiss = { editing = null }) { scope.launch { app.repo.saveVehicle(it) }; editing = null }
     }
     if (addFuel) FuelDialog(vehicles.firstOrNull()?.id, onDismiss = { addFuel = false }) { scope.launch { app.repo.addFuel(it) }; addFuel = false }
+}
+
+/** Tap the bar that matches the dashboard; shows litres left, range and the cost to fill up. */
+@Composable
+private fun FuelGaugeCard(v: Vehicle, fuel: List<FuelLog>, onSet: (Int) -> Unit) {
+    val chart = nz.afhome.ledger.ui.LocalChart.current
+    val est = nz.afhome.ledger.analysis.FuelGauge.estimate(v, fuel)
+    val full = v.gaugeBars.coerceIn(1, 30)
+    Column(Modifier.padding(top = 10.dp)) {
+        Text("Fuel gauge: tap the number of bars showing", style = MaterialTheme.typography.labelLarge)
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            for (i in 1..full) {
+                val on = (v.fuelBars ?: 0) >= i
+                val color = when {
+                    !on -> chart.grid
+                    est?.low == true -> chart.critical
+                    else -> chart.bar
+                }
+                androidx.compose.foundation.layout.Box(
+                    Modifier.weight(1f).height(28.dp)
+                        .background(color, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                        .clickable { onSet(if (v.fuelBars == i) i - 1 else i) }
+                )
+            }
+        }
+        Row {
+            Text("E", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+            Text("${v.fuelBars ?: "?"} of $full bars", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(2f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("F", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+        }
+        if (est != null) {
+            Text(
+                String.format(java.util.Locale.US, "≈ %.0f L left · about %d km of driving", est.litresLeft, est.rangeKm),
+                fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp),
+                color = if (est.low) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                String.format(java.util.Locale.US, "Filling up now: ~%.0f L ≈ %s at %s/L", est.fillLitres, money(est.fillCost), money(est.pricePerL)) +
+                    if (est.measured) "" else String.format(java.util.Locale.US, " (range uses a typical %.1f L/100 km until you log fill-ups with the odometer)", est.lp100),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (est.low) Text("⚠ Running low: fill up soon.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(
+            "Gauge set to $full bars when full, ${v.tankLitres.toInt()} L tank. Check how many bars show next time the tank is full, and change it under Edit if needed.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
+        )
+    }
 }
 
 @Composable
@@ -138,6 +210,10 @@ private fun VehicleDialog(v: Vehicle, onDismiss: () -> Unit, onSave: (Vehicle) -
                 MoneyField("Insurance per year", x.insuranceAnnual, Modifier.fillMaxWidth()) { x = x.copy(insuranceAnnual = it) }
                 NumberField("Odometer", x.odometer?.toDouble(), Modifier.fillMaxWidth(), "km") { x = x.copy(odometer = it?.toInt()) }
                 NumberField("Next service at", x.nextServiceKm?.toDouble(), Modifier.fillMaxWidth(), "km") { x = x.copy(nextServiceKm = it?.toInt()) }
+                NumberField("Fuel tank size", x.tankLitres, Modifier.fillMaxWidth(), "L") { x = x.copy(tankLitres = it ?: 50.0) }
+                NumberField("Fuel gauge bars when full", x.gaugeBars.toDouble(), Modifier.fillMaxWidth(), "bars") {
+                    x = x.copy(gaugeBars = (it?.toInt() ?: 8).coerceIn(1, 30), fuelBars = x.fuelBars?.coerceAtMost((it?.toInt() ?: 8).coerceIn(1, 30)))
+                }
             }
         },
         confirmButton = { TextButton(onClick = { onSave(x) }, enabled = x.name.isNotBlank()) { Text("Save") } },

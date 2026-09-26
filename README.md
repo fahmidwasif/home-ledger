@@ -46,9 +46,12 @@ answering "where is…/do we have…" questions from the stock list.
 | Scan ("Accio receipt!") | ML Kit OCR on the phone → NZ receipt parser (Woolworths, PAK'nSAVE, New World, fuel, Bangladeshi grocers…). The photo is deleted straight after reading. Asks when unsure: who bought it, which account paid (Fahmid ANZ, Anika ANZ, Anika ASB, Joint ANZ, Joint ASB, Cash), missing date/total, totals that don't add up, fuel litres. Long receipts: add a 2nd photo. |
 | Stock | Items auto-added from grocery/household receipts, grouped by room (Pantry, Fridge, Freezer, Bathroom…) with an exact spot. **Use** records what for: home cooking, **packed lunch for work**, wasted… |
 | List | Used-up and running-low items, plus "usually due" predictions from how often you buy things; shows the cheapest shop you've paid. |
-| Insights | 12-month trend, categories, Anika vs Fahmid, accounts, shops, Bangladeshi & South Asian groceries, packed vs bought lunch, gifts (by person and occasion), Zakat/donations/family support, car costs and a yearly estimate, weekday pattern, top-up shops, price rises, food waste, budgets. |
-| Owl | Chat with the on-device model about your own data. |
-| Car | WoF / rego / insurance reminders, fuel log (auto from fuel receipts), L/100km. |
+| Insights | 12-month trend, spending by type and category (groceries, bills, subscriptions, transport, wellbeing, travel…), Anika vs Fahmid, accounts, shops, Bangladeshi & South Asian groceries, packed vs bought lunch, gifts (by person and occasion), Zakat/donations/family support, car costs and a yearly estimate, weekday pattern, top-up shops, price rises, food waste, budgets. |
+| Quick spend | "Spent without a receipt?" shortcuts: AT HOP top-up, coffee, bought lunch, gadget, subscription, Uber, parking, bills. |
+| Subscriptions | Recurring payments (streaming, phone, gym, insurance, rent…) recorded automatically on each due date, with a reminder 3 days before. |
+| Starting stock | Add what's already at home (atta, rice, oil, dal…) at $0, so stock and shopping lists are right from day one. |
+| Owl | Chat with the on-device model; it is given only the household data relevant to each question. |
+| Car | Honda Civic preset; WoF / rego / insurance reminders; fuel log (auto from fuel receipts), L/100km; fuel-gauge bars → litres left, range and cost to fill. |
 
 Auckland reference figures used (Sept 2026): couple grocery spend $160–220/week; petrol-car rego $181.45/yr;
 WoF ≈ $76–91; diesel/EV RUC $76 per 1,000 km; no Auckland regional fuel tax since July 2024.

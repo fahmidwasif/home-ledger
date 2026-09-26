@@ -51,7 +51,7 @@ private val tabs = listOf(
 private val titles = mapOf(
     "home" to "A&F Home", "stock" to "Home stock", "list" to "Shopping list", "insights" to "Insights", "ask" to "Ask",
     "scan" to "Scan receipt", "receipts" to "Receipts", "receipt/{id}" to "Receipt", "car" to "Car", "lunch" to "Packed lunches",
-    "settings" to "Settings",
+    "settings" to "Settings", "subs" to "Subscriptions", "startstock" to "Starting stock",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,9 +105,18 @@ fun AppNav() {
                     onCar = { go("car") },
                     onLunch = { go("lunch") },
                     onSettings = { go("settings") },
+                    onSubscriptions = { go("subs") },
+                    onStartingStock = { go("startstock") },
                 )
             }
-            composable("stock") { InventoryScreen() }
+            composable("stock") { InventoryScreen(onStartingStock = { go("startstock") }) }
+            composable("subs") { nz.afhome.ledger.ui.screens.SubscriptionsScreen() }
+            composable("startstock") {
+                nz.afhome.ledger.ui.screens.StartingStockScreen {
+                    nav.popBackStack()
+                    scope.launch { snackbar.showSnackbar("Added to home stock. Nothing counted as spending.") }
+                }
+            }
             composable("list") { ShoppingScreen() }
             composable("insights") { InsightsScreen() }
             composable("ask") { AskScreen() }

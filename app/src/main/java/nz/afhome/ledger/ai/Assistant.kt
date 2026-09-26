@@ -6,8 +6,8 @@ import nz.afhome.ledger.analysis.Insights
 import nz.afhome.ledger.analysis.Period
 import nz.afhome.ledger.analysis.range
 import nz.afhome.ledger.data.Category
+import nz.afhome.ledger.data.Frequency
 import nz.afhome.ledger.data.HomeRoom
-import nz.afhome.ledger.data.PayAccount
 import nz.afhome.ledger.data.Person
 import nz.afhome.ledger.data.Prefs
 import nz.afhome.ledger.data.Repository
@@ -25,45 +25,101 @@ import java.time.LocalDate
 class Assistant(private val repo: Repository, private val prefs: Prefs, private val llm: LocalLlm) {
 
     private val intro = """
-        You are the private household assistant for "Anika & Fahmid Home", a Bangladeshi couple living in Auckland, New Zealand.
-        They own a car, usually pack lunch from home for work, enjoy Bangladeshi cooking, and sometimes buy gifts.
-        Money is NZD; NZ GST is 15%. Payment accounts: ${PayAccount.entries.joinToString { it.label }}.
-        Answer briefly and concretely using ONLY the data below. If the data doesn't contain the answer, say so.
-        You run entirely on their phone; nothing leaves the device.
+        You are "the Owl", the private household assistant for Anika & Fahmid, a Bangladeshi couple living in Auckland, New Zealand.
+        They own a car, usually pack lunch from home for work, love Bangladeshi cooking, and sometimes buy gifts. Money is NZD.
+        Rules: facts about THEIR household come only from the data below; never invent amounts, dates, people or counts.
+        If the data doesn't answer a household question, say so briefly. For recipes, tips and general questions, use your own knowledge.
+        Keep answers short and practical (a few sentences or a short list).
     """.trimIndent()
 
-    suspend fun context(): String {
+    /** What a question is about, so the model only sees relevant data (small models get confused by too much). */
+    enum class Topic { COOKING, STOCK, SHOPPING, SPENDING, CAR, GIFTS, SUBSCRIPTIONS, LUNCH, GENERAL }
+
+    fun topics(question: String): Set<Topic> {
+        val q = " " + question.lowercase() + " "
+        fun has(vararg w: String) = w.any { q.contains(it) }
+        val t = mutableSetOf<Topic>()
+        if (has("cook", "recipe", "dinner", "breakfast", "meal", "curry", "bhat", "bhaji", "bhorta", "make with", " eat", "dish", "biryani", "khichuri", "tiffin")) t += Topic.COOKING
+        if (has("where", "do we have", "have we got", "stock", "pantry", "fridge", "freezer", " left", "run out", "expir")) t += Topic.STOCK
+        if (has(" buy", "shopping", "grocery list", "need to get", "shop for", "this week")) t += Topic.SHOPPING
+        if (has("spend", "spent", "cost", "money", "budget", " save", "saving", "expens", "paid", " pay ", "account", " anz", " asb", "cash", " who ", "more than", "month", "trend", "habit", "analys", "$")) t += Topic.SPENDING
+        if (has(" car", "fuel", "petrol", "wof", "rego", "insurance", "service", "parking")) t += Topic.CAR
+        if (has("gift", "present", " eid", "birthday", "wedding")) t += Topic.GIFTS
+        if (has("subscription", "netflix", "spotify", "recurring", "monthly bill", "renew")) t += Topic.SUBSCRIPTIONS
+        if (has("lunch", "lunchbox", "packed")) t += Topic.LUNCH
+        if (t.isEmpty()) t += Topic.GENERAL
+        return t
+    }
+
+    /** Household data relevant to [question]. With no question, a broad summary (used for deep analysis). */
+    suspend fun context(question: String? = null): String {
         val dao = repo.dao
-        val receipts = dao.allReceipts()
-        val items = dao.allItems()
         val today = LocalDate.now()
-        val sb = StringBuilder(intro).append("\n\nToday is ${today.toEpochDay().fmtDate()}.\n")
+        val t = question?.let(::topics)
+            ?: setOf(Topic.SPENDING, Topic.GIFTS, Topic.CAR, Topic.LUNCH, Topic.SUBSCRIPTIONS, Topic.SHOPPING)
+        val sb = StringBuilder(intro)
+        sb.appendLine().appendLine().appendLine("Today is ${today.toEpochDay().fmtDate()}.")
 
-        for (p in listOf(Period.THIS_MONTH, Period.LAST_MONTH)) {
-            val r = Insights.build(p.range(today), receipts, items, dao.lunches(), dao.fuel(), dao.usage(), dao.budgets(), dao.vehicles(), prefs.weeklyGroceryTarget)
-            sb.append("\n## ${p.label}: total ${money0(r.total)} over ${r.receiptCount} receipts\n")
-            sb.append("By category: ").append(r.byCategory.take(8).joinToString { "${it.first.label} ${money0(it.second)}" }).append('\n')
-            sb.append("By person: ").append(r.byPerson.joinToString { "${it.first.label} ${money0(it.second)}" }).append('\n')
-            sb.append("By account: ").append(r.byAccount.joinToString { "${it.first} ${money0(it.second)}" }).append('\n')
-            if (r.giftTotal > 0) sb.append("Gifts: ${money0(r.giftTotal)} ").append(r.giftsByRecipient.take(4).joinToString { "${it.label} ${money0(it.value)}" }).append('\n')
-            if (r.packedLunches > 0) sb.append("Packed lunches: ${r.packedLunches}, saved ~${money0(r.lunchSavings)}\n")
-            if (r.fuelTotal > 0) sb.append("Fuel: ${money0(r.fuelTotal)}\n")
+        if (Topic.COOKING in t || Topic.STOCK in t || Topic.SHOPPING in t || Topic.GENERAL in t) {
+            val inv = dao.inventory().filter { it.quantity > 0 }
+            sb.appendLine().appendLine("## Food and items at home now (name: quantity, where)")
+            if (inv.isEmpty()) sb.appendLine("(nothing recorded yet)")
+            inv.take(if (Topic.GENERAL in t) 30 else 80).forEach {
+                val unit = it.unit?.let { u -> " $u" } ?: ""
+                val spot = it.spot?.let { s -> " – $s" } ?: ""
+                sb.appendLine("${it.name}: ${qtyText(it.quantity)}$unit, ${HomeRoom.of(it.room).label}$spot")
+            }
+            if (Topic.COOKING in t) sb.appendLine("When suggesting meals, prefer dishes that use what they already have.")
         }
-
-        sb.append("\n## Recent receipts\n")
-        receipts.sortedByDescending { it.date }.take(12).forEach {
-            sb.append("${it.date.fmtShort()} ${it.store} ${money0(it.total)} by ${Person.of(it.purchaser).label}\n")
+        if (Topic.SHOPPING in t) {
+            val shop = dao.shopping().filter { !it.done }
+            sb.appendLine().appendLine("## Shopping list")
+            sb.appendLine(if (shop.isEmpty()) "(empty)" else shop.joinToString { it.name })
         }
-
-        val inv = dao.inventory().filter { it.quantity > 0 }
-        if (inv.isNotEmpty()) {
-            sb.append("\n## At home (item: qty, where)\n")
-            inv.take(70).forEach { sb.append("${it.name}: ${qtyText(it.quantity)}, ${HomeRoom.of(it.room).label}${it.spot?.let { s -> " – $s" } ?: ""}\n") }
+        if (Topic.SPENDING in t || Topic.GIFTS in t || Topic.LUNCH in t || Topic.CAR in t) {
+            val receipts = dao.allReceipts()
+            val items = dao.allItems()
+            for (p in listOf(Period.THIS_MONTH, Period.LAST_MONTH)) {
+                val r = Insights.build(
+                    p.range(today), receipts, items, dao.lunches(), dao.fuel(), dao.usage(), dao.budgets(), dao.vehicles(),
+                    prefs.weeklyGroceryTarget, dao.subscriptions(),
+                )
+                sb.appendLine().appendLine("## ${p.label}: total spent ${money0(r.total)} (${r.receiptCount} purchases)")
+                if (Topic.SPENDING in t) {
+                    if (r.byCategory.isNotEmpty()) sb.appendLine("By category: " + r.byCategory.take(10).joinToString { "${it.first.label} ${money0(it.second)}" })
+                    if (r.byPerson.isNotEmpty()) sb.appendLine("Paid by: " + r.byPerson.joinToString { "${it.first.label} ${money0(it.second)}" })
+                    if (r.byAccount.isNotEmpty()) sb.appendLine("From accounts: " + r.byAccount.joinToString { "${it.first} ${money0(it.second)}" })
+                    if (r.byStore.isNotEmpty()) sb.appendLine("Shops: " + r.byStore.take(5).joinToString { "${it.label} ${money0(it.value)}" })
+                }
+                if (Topic.GIFTS in t) {
+                    val who = r.giftsByRecipient.take(5).joinToString { "${it.label} ${money0(it.value)}" }
+                    sb.appendLine("Gifts: ${money0(r.giftTotal)}" + if (who.isNotEmpty()) " ($who)" else "")
+                }
+                if (Topic.LUNCH in t) sb.appendLine("Packed lunches: ${r.packedLunches} (saved about ${money0(r.lunchSavings)}); bought lunches ${money0(r.boughtLunch)}")
+                if (Topic.CAR in t) sb.appendLine("Car costs: ${money0(r.carTotal)} (fuel ${money0(r.fuelTotal)})")
+            }
+            if (Topic.SPENDING in t) {
+                sb.appendLine().appendLine("## Latest purchases")
+                receipts.sortedByDescending { it.date }.take(10).forEach {
+                    sb.appendLine("${it.date.fmtShort()}: ${it.store} ${money0(it.total)}, by ${Person.of(it.purchaser).label}")
+                }
+            }
         }
-        val shop = dao.shopping().filter { !it.done }
-        if (shop.isNotEmpty()) sb.append("\n## Shopping list\n").append(shop.joinToString { it.name }).append('\n')
-        dao.vehicles().forEach { v ->
-            sb.append("\n## Car ${v.name}: WoF ${v.wofExpiry?.fmtDate() ?: "?"}, rego ${v.regoExpiry?.fmtDate() ?: "?"}, insurance renewal ${v.insuranceRenewal?.fmtDate() ?: "?"}\n")
+        if (Topic.SUBSCRIPTIONS in t || question == null) {
+            val subs = dao.subscriptions().filter { it.active }
+            if (subs.isNotEmpty() || Topic.SUBSCRIPTIONS in t) {
+                sb.appendLine().appendLine("## Recurring payments")
+                if (subs.isEmpty()) sb.appendLine("(none recorded)")
+                subs.forEach {
+                    sb.appendLine("${it.name}: ${money0(it.amount)} ${Frequency.of(it.frequency).label.lowercase()}, next ${it.nextDue.fmtDate()}")
+                }
+            }
+        }
+        if (Topic.CAR in t) dao.vehicles().forEach { v ->
+            sb.appendLine().appendLine(
+                "## Car ${v.name}: WoF due ${v.wofExpiry?.fmtDate() ?: "not set"}, rego due ${v.regoExpiry?.fmtDate() ?: "not set"}, " +
+                    "insurance renews ${v.insuranceRenewal?.fmtDate() ?: "not set"}"
+            )
         }
         return sb.toString()
     }
@@ -130,22 +186,21 @@ class Assistant(private val repo: Repository, private val prefs: Prefs, private 
     suspend fun deepAnalysis(): String = llm.ask(
         system = context(),
         prompt = "Give a deep analysis of our spending habits: 5–8 short bullet points covering trends, who spends on what, " +
-            "groceries vs Auckland norms, Bangladeshi groceries, gifts, car costs, packed lunches, and 3 practical suggestions to save money.",
+            "groceries vs Auckland norms, Bangladeshi groceries, gifts, car costs, subscriptions, packed lunches, " +
+            "and 3 practical suggestions to save money. Use only the numbers given.",
         temperature = 0.5,
     )
 
     companion object {
         val SUGGESTED = listOf(
+            "Give me a Bangladeshi dinner idea using what we have at home",
             "Where is the basmati rice?",
             "How much did we spend on groceries this month?",
             "Who spent more this month, Anika or Fahmid?",
             "What should we buy this week?",
+            "How much do our subscriptions cost?",
             "How much have we spent on gifts?",
-            "Give me a Bangladeshi dinner idea using what we have at home",
             "How can we cut our car costs?",
-            "Which account did we use most this month?",
         )
-
-        fun categoryNames() = Category.entries.joinToString { it.label }
     }
 }

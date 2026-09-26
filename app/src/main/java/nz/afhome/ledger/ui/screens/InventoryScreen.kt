@@ -58,7 +58,7 @@ import nz.afhome.ledger.ui.NumberField
 import nz.afhome.ledger.ui.PersonChoice
 
 @Composable
-fun InventoryScreen() {
+fun InventoryScreen(onStartingStock: () -> Unit) {
     val app = LocalContext.current.ledger
     val scope = rememberCoroutineScope()
     val items by app.repo.dao.inventoryFlow().collectAsState(initial = emptyList())
@@ -75,6 +75,11 @@ fun InventoryScreen() {
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp)) {
+            item {
+                androidx.compose.material3.OutlinedButton(onClick = onStartingStock, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Icon(nz.afhome.ledger.ui.Magic.Trunk, null); Text("  Add what's already at home (\$0)")
+                }
+            }
             item {
                 OutlinedTextField(query, { query = it }, leadingIcon = { Icon(Icons.Default.Search, null) },
                     placeholder = { Text("Find something at home…") }, singleLine = true, modifier = Modifier.fillMaxWidth())

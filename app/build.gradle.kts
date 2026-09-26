@@ -13,8 +13,8 @@ android {
         applicationId = "nz.afhome.ledger"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         // The realme GT Master is arm64.
         ndk { abiFilters += "arm64-v8a" }
     }

@@ -97,6 +97,9 @@ data class InsightReport(
     val wastedValue: Double,
     val wastedItems: List<Amount>,
     val budgets: List<Triple<Category, Double, Double>>, // category, spent, budget (monthly, scaled to range)
+    /** Active recurring payments, as a monthly equivalent. */
+    val subscriptionsMonthly: Double,
+    val subscriptions: List<Amount>,
     val tips: List<String>,
 )
 
@@ -112,6 +115,7 @@ object Insights {
         budgets: List<Budget>,
         vehicles: List<Vehicle>,
         weeklyTarget: Double,
+        subscriptions: List<nz.afhome.ledger.data.Subscription> = emptyList(),
     ): InsightReport {
         val receiptById = receipts.associateBy { it.id }
         val inRange = receipts.filter { it.date in range }
@@ -222,7 +226,13 @@ object Insights {
             cat(Category.DINING), boughtLunch, rangeLunches.size,
             Person.entries.map { p -> p to rangeLunches.count { it.person == p.name } }.filter { it.second > 0 },
             lunchSavings, fuelTotal, litres, avgPpl, lp100, carTotal, carYear, weekday, topUps.size, topUps.sumOf { it.total },
-            priceRises, topItems, wastedValue, wastedItems, budgetRows, emptyList(),
+            priceRises, topItems, wastedValue, wastedItems, budgetRows,
+            subscriptions.filter { it.active }.sumOf { it.amount * nz.afhome.ledger.data.Frequency.of(it.frequency).perYear / 12 },
+            subscriptions.filter { it.active }.map {
+                Amount(it.name, it.amount * nz.afhome.ledger.data.Frequency.of(it.frequency).perYear / 12,
+                    "${money(it.amount)} ${nz.afhome.ledger.data.Frequency.of(it.frequency).label.lowercase()}")
+            }.sortedByDescending { it.value },
+            emptyList(),
         )
         return report.copy(tips = tips(report, weeklyTarget))
     }
@@ -268,6 +278,8 @@ object Insights {
         val anika = r.byPerson.firstOrNull { it.first == Person.ANIKA }?.second ?: 0.0
         val fahmid = r.byPerson.firstOrNull { it.first == Person.FAHMID }?.second ?: 0.0
         if (anika + fahmid > 0) t += "Anika paid ${money0(anika)} and Fahmid ${money0(fahmid)} of purchases this period."
+        if (r.subscriptionsMonthly > 0) t += "Recurring payments come to ${money0(r.subscriptionsMonthly)}/month " +
+            "(${money0(r.subscriptionsMonthly * 12)}/year). Check the list now and then for ones you no longer use."
         r.budgets.filter { it.second > it.third }.forEach { (c, spent, b) -> t += "Over budget on ${c.label}: ${money0(spent)} of ${money0(b)}." }
         if (r.giftTotal > 0) t += "Gifts this period: ${money0(r.giftTotal)}" +
             (r.giftsByOccasion.firstOrNull { it.label != "Unspecified" }?.let { ", mostly for ${it.label}." } ?: ".")

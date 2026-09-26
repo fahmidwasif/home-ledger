@@ -68,6 +68,10 @@ class Repository(private val db: AppDatabase, private val prefs: Prefs) {
                     total = fuelTotal, odometer = d.odometer, station = d.store, receiptId = receiptId, person = purchaser,
                 )
             )
+            // Assume a fill-up to full; the user can correct the gauge on the Car screen.
+            dao.vehicles().firstOrNull { vehicleId == null || it.id == vehicleId }?.let { v ->
+                dao.upsertVehicle(v.copy(fuelBars = v.gaugeBars, fuelBarsDay = date, odometer = d.odometer ?: v.odometer))
+            }
         }
         touched()
         receiptId
@@ -168,12 +172,74 @@ class Repository(private val db: AppDatabase, private val prefs: Prefs) {
         touched()
     }
 
+    // ---------- spending without a receipt ----------
+
+    /** One-line purchase: AT HOP top-up, coffee, a gadget bought online... */
+    suspend fun quickSpend(
+        what: String, amount: Double, category: Category, person: Person, account: PayAccount?, day: Long, notes: String? = null,
+    ): Long = db.withTransaction {
+        val id = dao.insertReceipt(
+            Receipt(store = what.trim(), date = day, total = amount, purchaser = person.name, payment = account?.name,
+                notes = notes, manual = true)
+        )
+        dao.insertItems(listOf(LineItem(receiptId = id, name = what.trim(), normName = normalizeName(what), unitPrice = amount,
+            total = amount, category = category.name)))
+        account?.let { prefs.setLastAccount(person, it) }
+        touched()
+        id
+    }
+
+    // ---------- subscriptions ----------
+
+    suspend fun saveSubscription(s: Subscription) { dao.upsertSubscription(s); touched() }
+    suspend fun deleteSubscription(s: Subscription) { dao.deleteSubscription(s); touched() }
+
+    /**
+     * Records every payment that has fallen due (catching up if the phone was off for a while)
+     * and moves each subscription to its next due date. Returns how many payments were logged.
+     */
+    suspend fun processSubscriptions(today: Long = today()): Int {
+        var logged = 0
+        for (s in dao.subscriptions()) {
+            if (!s.active || !s.autoLog) continue
+            var due = s.nextDue
+            val freq = Frequency.of(s.frequency)
+            while (due <= today) {
+                quickSpend(s.name, s.amount, Category.of(s.category), Person.of(s.purchaser), PayAccount.of(s.payment), due,
+                    notes = "Recurring: ${freq.label.lowercase()}")
+                due = freq.next(due)
+                logged++
+            }
+            if (due != s.nextDue) dao.upsertSubscription(s.copy(nextDue = due))
+        }
+        if (logged > 0) touched()
+        return logged
+    }
+
+    // ---------- starting stock ----------
+
+    /**
+     * Adds things already at home when you start using the app. They cost $0 and are not spending;
+     * if the item is already in stock the quantity is added on.
+     */
+    suspend fun addStartingStock(items: List<InventoryItem>) = db.withTransaction {
+        for (i in items) {
+            val norm = normalizeName(i.name)
+            val existing = dao.inventoryByNorm(norm)
+            dao.upsertInventory(
+                existing?.copy(quantity = existing.quantity.coerceAtLeast(0.0) + i.quantity, updatedAt = System.currentTimeMillis())
+                    ?: i.copy(normName = norm, lastPrice = 0.0, lastPurchased = null)
+            )
+        }
+        touched()
+    }
+
     // ---------- backup ----------
 
     suspend fun snapshot() = Snapshot(
         receipts = dao.allReceipts(), lineItems = dao.allItems(), inventory = dao.inventory(), usage = dao.usage(),
         shopping = dao.shopping(), lunches = dao.lunches(), vehicles = dao.vehicles(), fuel = dao.fuel(),
-        rules = dao.rules(), budgets = dao.budgets(),
+        rules = dao.rules(), budgets = dao.budgets(), subscriptions = dao.subscriptions(),
     )
 
     suspend fun restore(s: Snapshot) { dao.replaceAll(s); prefs.dirty = false }

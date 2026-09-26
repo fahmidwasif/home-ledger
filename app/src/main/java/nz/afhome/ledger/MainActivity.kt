@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import nz.afhome.ledger.ui.AppNav
 import nz.afhome.ledger.ui.LedgerTheme
 import nz.afhome.ledger.work.Jobs
@@ -21,6 +23,8 @@ class MainActivity : ComponentActivity() {
             ledger.prefs.askedNotifications = true
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        // Log any subscription payments that fell due while the app was closed.
+        lifecycleScope.launch { ledger.repo.processSubscriptions() }
         setContent { LedgerTheme { AppNav() } }
     }
 

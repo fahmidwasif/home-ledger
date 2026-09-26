@@ -73,14 +73,16 @@ fun InsightsScreen() {
     val usage by dao.usageFlow().collectAsState(initial = emptyList())
     val budgets by dao.budgetsFlow().collectAsState(initial = emptyList())
     val vehicles by dao.vehiclesFlow().collectAsState(initial = emptyList())
+    val subscriptions by dao.subscriptionsFlow().collectAsState(initial = emptyList())
     val llmState by app.llm.state.collectAsState()
     var period by remember { mutableStateOf(Period.THIS_MONTH) }
     var budgetDialog by remember { mutableStateOf(false) }
     var aiText by remember { mutableStateOf<String?>(null) }
     var aiBusy by remember { mutableStateOf(false) }
 
-    val r = remember(period, receipts, items, lunches, fuel, usage, budgets, vehicles) {
-        Insights.build(period.range(earliest = receipts.minOfOrNull { it.date }), receipts, items, lunches, fuel, usage, budgets, vehicles, app.prefs.weeklyGroceryTarget)
+    val r = remember(period, receipts, items, lunches, fuel, usage, budgets, vehicles, subscriptions) {
+        Insights.build(period.range(earliest = receipts.minOfOrNull { it.date }), receipts, items, lunches, fuel, usage, budgets, vehicles,
+            app.prefs.weeklyGroceryTarget, subscriptions)
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -130,6 +132,12 @@ fun InsightsScreen() {
             }
         }
         item {
+            SectionCard("By type of spending") {
+                if (r.byGroup.isEmpty()) Text("No purchases in this period.")
+                HBars(r.byGroup.map { it.first.label to it.second })
+            }
+        }
+        item {
             SectionCard("Where the money went") {
                 if (r.byCategory.isEmpty()) Text("No purchases in this period.")
                 HBars(r.byCategory.take(10).map { it.first.label to it.second })
@@ -144,6 +152,14 @@ fun InsightsScreen() {
                     Text("${p.label} mostly bought: " + cats.joinToString { "${it.first.label} (${money0(it.second)})" },
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
                 }
+            }
+        }
+        if (r.subscriptions.isNotEmpty()) item {
+            SectionCard("Subscriptions & recurring", icon = nz.afhome.ledger.ui.Magic.TimeTurner) {
+                Text("${money0(r.subscriptionsMonthly)} a month · ${money0(r.subscriptionsMonthly * 12)} a year", fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(8.dp))
+                HBars(r.subscriptions.map { "${it.label} · ${it.extra}" to it.value })
+                Text("Bars show the monthly equivalent", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item { SectionCard("Paid from", icon = nz.afhome.ledger.ui.Magic.Ring) { HBars(r.byAccount) } }

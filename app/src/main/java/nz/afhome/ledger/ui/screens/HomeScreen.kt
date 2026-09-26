@@ -32,6 +32,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +55,13 @@ import nz.afhome.ledger.ledger
 import nz.afhome.ledger.ui.SectionCard
 import nz.afhome.ledger.ui.StatTile
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit, onReceipt: (Long) -> Unit, onCar: () -> Unit, onLunch: () -> Unit, onSettings: () -> Unit) {
+fun HomeScreen(
+    onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit, onReceipt: (Long) -> Unit, onCar: () -> Unit, onLunch: () -> Unit,
+    onSettings: () -> Unit, onSubscriptions: () -> Unit, onStartingStock: () -> Unit,
+) {
+    var quick by remember { mutableStateOf<QuickPreset?>(null) }
     val app = LocalContext.current.ledger
     val scope = rememberCoroutineScope()
     val receipts by app.repo.dao.allReceiptsFlow().collectAsState(initial = emptyList())
@@ -61,6 +69,7 @@ fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit,
     val lunches by app.repo.dao.lunchFlow().collectAsState(initial = emptyList())
     val vehicles by app.repo.dao.vehiclesFlow().collectAsState(initial = emptyList())
     val inventory by app.repo.dao.inventoryFlow().collectAsState(initial = emptyList())
+    val fuel by app.repo.dao.fuelFlow().collectAsState(initial = emptyList())
     app.prefs.changes.collectAsState().value
 
     val month = Period.THIS_MONTH.range()
@@ -73,6 +82,9 @@ fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit,
 
     val reminders = buildList {
         vehicles.forEach { v ->
+            nz.afhome.ledger.analysis.FuelGauge.estimate(v, fuel)?.takeIf { it.low }?.let {
+                add("${v.name}: fuel low, about ${it.rangeKm} km left. Filling up ≈ ${money(it.fillCost)}")
+            }
             listOf("WoF" to v.wofExpiry, "Rego" to v.regoExpiry, "Insurance" to v.insuranceRenewal).forEach { (label, d) ->
                 if (d != null) {
                     val left = Insights.daysUntil(d)
@@ -109,6 +121,13 @@ fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit,
             }
         }
         item {
+            SectionCard("Spent without a receipt?") {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickPreset.entries.forEach { p -> AssistChip(onClick = { quick = p }, label = { Text(p.label) }) }
+                }
+            }
+        }
+        item {
             SectionCard("Lunch from home today?", icon = nz.afhome.ledger.ui.Magic.Cauldron, action = { AssistChip(onClick = onLunch, label = { Text("History") }, leadingIcon = { Icon(nz.afhome.ledger.ui.Magic.Cauldron, null) }) }) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(Person.ANIKA, Person.FAHMID).forEach { p ->
@@ -124,6 +143,14 @@ fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit,
                     "${monthLunches.size} packed lunch${if (monthLunches.size == 1) "" else "es"} this month, about ${money0(monthLunches.sumOf { it.boughtCost - it.packedCost })} saved",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+        }
+        if (inventory.isEmpty()) item {
+            Card(Modifier.clickable(onClick = onStartingStock), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(nz.afhome.ledger.ui.Magic.Trunk, null); Spacer(Modifier.width(12.dp))
+                    Text("Start your home stock: tap to add what's already in the pantry (flour, oil, rice…) at no cost.")
+                }
             }
         }
         if (reminders.isNotEmpty()) item {
@@ -148,6 +175,7 @@ fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit,
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = onCar, label = { Text("Car") }, leadingIcon = { Icon(nz.afhome.ledger.ui.Magic.FlyingCar, null) })
                 AssistChip(onClick = onReceipts, label = { Text("All receipts") }, leadingIcon = { Icon(nz.afhome.ledger.ui.Magic.Diary, null) })
+                AssistChip(onClick = onSubscriptions, label = { Text("Subscriptions") }, leadingIcon = { Icon(nz.afhome.ledger.ui.Magic.TimeTurner, null) })
             }
         }
         item {
@@ -164,6 +192,13 @@ fun HomeScreen(onScan: () -> Unit, onManual: () -> Unit, onReceipts: () -> Unit,
                     }
                 }
             }
+        }
+    }
+
+    quick?.let { p ->
+        QuickSpendDialog(p, Person.of(app.prefs.defaultPerson), { app.prefs.lastAccount(it) }, onDismiss = { quick = null }) { what, amount, cat, person, account, day ->
+            scope.launch { app.repo.quickSpend(what, amount, cat, person, account, day) }
+            quick = null
         }
     }
 }

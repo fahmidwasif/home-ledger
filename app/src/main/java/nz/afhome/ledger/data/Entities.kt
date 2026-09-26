@@ -1,5 +1,6 @@
 package nz.afhome.ledger.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -121,6 +122,13 @@ data class Vehicle(
     val insuranceAnnual: Double? = null,
     val nextServiceKm: Int? = null,
     val odometer: Int? = null,
+    /** Fuel tank size; a 2008 Civic 1.8 holds 50 L. */
+    @ColumnInfo(defaultValue = "50") val tankLitres: Double = 50.0,
+    /** How many bars the dashboard fuel gauge shows when full. */
+    @ColumnInfo(defaultValue = "8") val gaugeBars: Int = 8,
+    /** Bars showing at the last reading, and when that was (epoch day). */
+    val fuelBars: Int? = null,
+    val fuelBarsDay: Long? = null,
 )
 
 @Serializable
@@ -153,6 +161,27 @@ data class Budget(
     val monthly: Double,
 )
 
+/** A recurring payment (Netflix, gym, phone plan, insurance...). Logged as spending automatically when due. */
+@Serializable
+@Entity(tableName = "subscriptions")
+data class Subscription(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val amount: Double,
+    val category: String = Category.SUBSCRIPTIONS.name,
+    val frequency: String = Frequency.MONTHLY.name,
+    /** Epoch day of the next payment. */
+    val nextDue: Long,
+    val purchaser: String = Person.BOTH.name,
+    val payment: String? = null,
+    /** Record a purchase automatically on each due date. */
+    val autoLog: Boolean = true,
+    val active: Boolean = true,
+    /** Days before the due date to send a reminder (0 = no reminder). */
+    val remindDays: Int = 3,
+    val notes: String? = null,
+)
+
 /** Everything in the database, used for backup and restore. */
 @Serializable
 data class Snapshot(
@@ -168,5 +197,7 @@ data class Snapshot(
     val fuel: List<FuelLog>,
     val rules: List<CategoryRule>,
     val budgets: List<Budget>,
+    /** Absent in backups made before subscriptions existed. */
+    val subscriptions: List<Subscription> = emptyList(),
     val settings: Map<String, String> = emptyMap(),
 )
