@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#7A1F2B" />
+            <stroke android:width="3dp" android:color="#E9B949" />
+            <size android:width="108dp" android:height="108dp" />
+        </shape>
+    </item>
+    <item android:gravity="center" android:width="64dp" android:height="64dp">
+        <vector android:width="64dp" android:height="64dp" android:viewportWidth="24" android:viewportHeight="24">
+            <!-- house -->
+            <path android:fillColor="#FFF6E0" android:pathData="M12,3.5L3,11.5h2.5v8h5v-5.5h3v5.5h5v-8h2.5L12,3.5z" />
+            <!-- small lightning bolt on the house -->
+            <path android:fillColor="#7A1F2B" android:pathData="M12.9,8.2L10.4,12.1h1.7L11.1,15.2l3,-4.3h-1.8l0.6,-2.7z" />
+        </vector>
+    </item>
+</layer-list>
