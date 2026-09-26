@@ -20,6 +20,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.HomeLedger">
 
+        <!-- Lets the on-device model use the phone's GPU (OpenCL) when "Use GPU" is on.
+             Optional: the app still works on phones without it. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
